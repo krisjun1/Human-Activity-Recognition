@@ -1,0 +1,169 @@
+---
+title: "Human Activity Recognition"
+author: "Krishna B. Thapa Magar"
+date: "3/31/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+## Background
+
+This is a project work as a fulfillment of Course Project for the course "Practical Machine Learning" offered by John Hopkins University under the platform Coursera.
+
+Below is the background information about the project: 
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+In this project, my goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. Participants were supervised by an experienced weight lifter to make sure the execution complied to the manner they were supposed to simulate. The exercises were performed by six male participants aged between 20-28 years, with little weight lifting experience. We made sure that all participants could easily simulate the mistakes in a safe and controlled manner by using a relatively light dumbbell (1.25kg).
+
+Read more: http://groupware.les.inf.puc-rio.br/har#ixzz4cwuDrW1pMore information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+## Data
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. The corresponding paper is: 
+
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+## Required Libraries:
+
+We will use the following libraries for the project.
+
+```{r}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(RColorBrewer)
+library(rattle)
+```
+
+## Getting the Data
+
+### The URL for training and testing data:
+
+```{r}
+set.seed(12345)
+trainUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+```
+
+### Loading the Data
+
+```{r}
+training <- read.csv(url(trainUrl), na.strings=c("NA","#DIV/0!",""))
+testing <- read.csv(url(testUrl), na.strings=c("NA","#DIV/0!",""))
+```
+
+### Partitioning the training data into training and cross validation data
+
+```{r}
+inTrain <- createDataPartition(training$classe, p=0.6, list=FALSE)
+myTraining <- training[inTrain, ]
+myTesting <- training[-inTrain, ]
+dim(myTraining); dim(myTesting)
+```
+
+## Cleaning the Data
+
+We first remove first five variables (X, user_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp) that don't play any role in the prediction.
+
+```{r}
+myTraining<-myTraining[,-(1:5)]
+#myTesting<-myTesting[,-(1:5)]
+```
+
+We then remove the "Near Zero Variance" variables as they don't contribute in the outcome.
+```{r}
+nzv <- nearZeroVar(myTraining, saveMetrics=TRUE)
+myTraining <- myTraining[,nzv$nzv==FALSE]
+#nzv<- nearZeroVar(myTesting,saveMetrics=TRUE)
+#myTesting <- myTesting[,nzv$nzv==FALSE]
+```
+
+We also remove the variables with more than 60% NAs.
+
+```{r}
+trainingV3 <- myTraining
+for(i in 1:length(myTraining)) {
+    if( sum( is.na( myTraining[, i] ) ) /nrow(myTraining) >= .6) {
+        for(j in 1:length(trainingV3)) {
+            if( length( grep(names(myTraining[i]), names(trainingV3)[j]) ) == 1)  {
+                trainingV3 <- trainingV3[ , -j]
+            }   
+        } 
+    }
+}
+
+# Set back to the original variable name
+myTraining <- trainingV3
+rm(trainingV3)
+```
+
+#### Alligning the variables of cross validation and test set with training set.
+```{r}
+trainingColnames<-colnames(myTraining)
+trainingColnames2<-colnames(myTraining[,-ncol(myTraining)])
+myTesting<-myTesting[trainingColnames]
+testing<-testing[trainingColnames2]
+dim(myTraining)
+dim(myTesting)
+dim(testing)
+```
+
+## Using Machine Learning Algorithms:
+
+We will first predict with rPart Model.
+
+### rPart Model
+
+```{r}
+set.seed(12345)
+modFit1<-train(classe~.,method="rpart", data=myTraining)
+fancyRpartPlot(modFit1$finalModel,cex=.5,under.cex=1,shadow.offset=0)
+classePredict1=predict(modFit1,myTesting)
+confusionMatrix(myTesting$classe,classePredict1)
+```
+
+This method is not great at all as we can see in the result of confusion Matrix that the accuracy of the method is 51.4%.
+So, we will try with Random Forest Model.
+
+### Random Forest Model
+
+
+```{r}
+set.seed(12345)
+fitControl <- trainControl(method="cv", number=3, verboseIter=F)
+modFit2 <- train(classe ~ ., data=myTraining, method="rf", trControl=fitControl)
+classePredict2=predict(modFit2,myTesting)
+confusionMatrix(myTesting$classe,classePredict2)
+```
+
+The accuracy of Random Forest Model appeared to be 99.7% which is an excellent result, so we will use Random Forests to predict on the test set.
+
+## Predicting the Test set
+
+```{r}
+classePredict <- predict(modFit2, newdata=testing)
+classePredict
+```
+
+
+
+
